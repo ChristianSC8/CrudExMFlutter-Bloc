@@ -1,88 +1,121 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:examen_flutter/bloc/user/user_bloc.dart';
 import 'package:examen_flutter/model/userModel.dart';
-import 'package:examen_flutter/apis/user_api.dart';
+import 'package:examen_flutter/repository/UserRepository.dart';
 
-class UserScreen extends StatefulWidget {
+class UserScreen extends StatelessWidget {
   @override
-  _UserListScreenState createState() => _UserListScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) => UserBloc(UserRepository()),
+      child: UserListContent(),
+    );
+  }
 }
 
-class _UserListScreenState extends State<UserScreen> {
-  List<UserModel> userList = [];
+class UserListContent extends StatefulWidget {
+  @override
+  _UserListContentState createState() => _UserListContentState();
+}
+
+class _UserListContentState extends State<UserListContent> {
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
+  final TextEditingController lastnameController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController rolController = TextEditingController();
   UserModel? editingUser;
 
   @override
   void initState() {
     super.initState();
-    loadUserList();
-  }
-
-  Future<void> loadUserList() async {
-    try {
-      final api = UserApi.create();
-      final users = await api.listUsers();
-      setState(() {
-        userList = users;
-      });
-    } catch (e) {
-      print("Error al cargar la lista de usuarios: $e");
-    }
-  }
-
-  Future<void> deleteUser(int userId) async {
-    try {
-      final api = UserApi.create();
-      await api.deleteUser(userId);
-      await loadUserList();
-    } catch (e) {
-      print("Error al eliminar el usuario: $e");
-    }
+    context.read<UserBloc>().add(ListUserEvent());
   }
 
   Future<void> createUser() async {
     final String username = usernameController.text;
     final String email = emailController.text;
+    final String lastname = lastnameController.text;
+    final String password = passwordController.text;
+    final String rol = rolController.text;
 
-    if (username.isEmpty || email.isEmpty) {
-      print("Por favor, complete todos los campos");
+    if (username.isEmpty || email.isEmpty || lastname.isEmpty || password.isEmpty || rol.isEmpty) {
+      showErrorMessage('Por favor, complete todos los campos');
       return;
     }
 
-    try {
-      final api = UserApi.create();
-      final newUser = UserModel(
-        idUser: 0,
-        username: username,
-        email: email,
-        lastname: '',
-        password: '',
-        rol: '',
-      );
+    final newUser = UserModel(
+      idUser: 0,
+      username: username,
+      email: email,
+      lastname: lastname,
+      password: password,
+      rol: rol,
+    );
 
-      final createdUser = await api.createUser(newUser);
-      await loadUserList();
-      usernameController.clear();
-      emailController.clear();
-      Navigator.of(context).pop();
-    } catch (e) {
-      print("Error al crear el usuario: $e");
-    }
+    context.read<UserBloc>().add(CreateUserEvent(newUser));
+    clearTextFields();
   }
 
-  Future<void> editUser(UserModel user) {
-    setState(() {
-      editingUser = user;
-      usernameController.text = user.username;
-      emailController.text = user.email;
-    });
-
-    showDialog(
+  Future<void> showDeleteConfirmationDialog(UserModel user) async {
+    return showDialog<void>(
       context: context,
-      builder: (context) {
+      barrierDismissible: false,
+      builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Actualizar Usuario'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          title: Text('Eliminar Usuario'),
+          content: Text('¿Seguro que deseas eliminar a ${user.username}?'),
+          actionsPadding: EdgeInsets.only(bottom: 8.0),
+          actions: <Widget>[
+            TextButton(
+              child: Text(
+                'Cancelar',
+                style: TextStyle(
+                  color: Colors.blue,
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text(
+                'Eliminar',
+                style: TextStyle(
+                  color: Colors.blue,
+                ),
+              ),
+              onPressed: () {
+                deleteUser(user);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> showEditDialog(UserModel user) async {
+    usernameController.text = user.username;
+    emailController.text = user.email;
+    lastnameController.text = user.lastname;
+    passwordController.text = user.password;
+    rolController.text = user.rol;
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          title: Text('Editar Usuario'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -90,12 +123,33 @@ class _UserListScreenState extends State<UserScreen> {
                 controller: usernameController,
                 decoration: InputDecoration(labelText: 'Nombre de usuario'),
               ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: lastnameController,
+                      decoration: InputDecoration(labelText: 'Apellido'),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: rolController,
+                      decoration: InputDecoration(labelText: 'Rol'),
+                    ),
+                  ),
+                ],
+              ),
               TextField(
                 controller: emailController,
                 decoration: InputDecoration(labelText: 'Correo electrónico'),
               ),
+              TextField(
+                controller: passwordController,
+                decoration: InputDecoration(labelText: 'Contraseña'),
+              ),
             ],
           ),
+          actionsPadding: EdgeInsets.only(bottom: 8.0),
           actions: [
             TextButton(
               child: Text(
@@ -105,160 +159,131 @@ class _UserListScreenState extends State<UserScreen> {
                 ),
               ),
               onPressed: () {
-                usernameController.clear();
-                emailController.clear();
+                clearTextFields();
                 Navigator.of(context).pop();
               },
             ),
             TextButton(
               child: Text(
-                'Actualizar',
+                'Guardar',
                 style: TextStyle(
                   color: Colors.blue,
                 ),
               ),
               onPressed: () {
-                updateUser().then((_) {
-                  loadUserList();
-                  usernameController.clear();
-                  emailController.clear();
-                  Navigator.of(context).pop();
-                });
+                updateUser(user);
+                clearTextFields();
+                Navigator.of(context).pop();
               },
             ),
           ],
         );
       },
     );
-    return Future.value();
   }
 
-  Future<void> updateUser() async {
-    if (editingUser == null) {
-      return;
-    }
-
+  void updateUser(UserModel user) {
     final String username = usernameController.text;
     final String email = emailController.text;
+    final String lastname = lastnameController.text;
+    final String password = passwordController.text;
+    final String rol = rolController.text;
 
-    if (username.isEmpty || email.isEmpty) {
-      print("Por favor, complete todos los campos");
+    if (username.isEmpty || email.isEmpty || lastname.isEmpty || password.isEmpty || rol.isEmpty) {
+      showErrorMessage('Por favor, complete todos los campos');
       return;
     }
 
-    try {
-      final api = UserApi.create();
-      final updatedUser = UserModel(
-        idUser: editingUser!.idUser,
-        username: username,
-        email: email,
-        lastname: editingUser!.lastname,
-        password: editingUser!.password,
-        rol: editingUser!.rol,
-      );
+    final updatedUser = UserModel(
+      idUser: user.idUser,
+      username: username,
+      email: email,
+      lastname: lastname,
+      password: password,
+      rol: rol,
+    );
 
-      await api.updateUser(editingUser!.idUser, updatedUser);
-      await loadUserList();
-      editingUser = null;
-      usernameController.clear();
-      emailController.clear();
-    } catch (e) {
-      print("Error al actualizar el usuario: $e");
-    }
+    context.read<UserBloc>().add(UpdateUserEvent(updatedUser));
+    clearTextFields();
+  }
+
+  void deleteUser(UserModel user) {
+    context.read<UserBloc>().add(DeleteUserEvent(user));
+  }
+
+  void clearTextFields() {
+    usernameController.clear();
+    emailController.clear();
+    lastnameController.clear();
+    passwordController.clear();
+    rolController.clear();
+  }
+
+  void showErrorMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Usuarios'),
+        title: Text('Lista de Usuarios'),
       ),
-      body: Column(
-        children: [
-          userList.isEmpty
-              ? Center(
-            child: CircularProgressIndicator(),
-          )
-              : Expanded(
-            child: ListView.builder(
+      body: BlocBuilder<UserBloc, UserState>(
+        builder: (context, state) {
+          if (state is UserLoadingState) {
+            return Center(child: CircularProgressIndicator());
+          } else if (state is UserLoadedState) {
+            final userList = state.UserList;
+            return userList.isEmpty
+                ? Center(child: Text('No hay usuarios disponibles.'))
+                : ListView.builder(
               itemCount: userList.length,
               itemBuilder: (context, index) {
                 final user = userList[index];
-                return Column(
-                  children: [
-                    ListTile(
-                      title: Text(user.username),
-                      subtitle: Text(user.email),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.edit),
-                            onPressed: () {
-                              editUser(user);
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.delete),
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (context) {
-                                  return AlertDialog(
-                                    title: Text('Eliminar Usuario'),
-                                    content: Text(
-                                        '¿Estás seguro de que deseas eliminar este usuario?'),
-                                    actions: [
-                                      TextButton(
-                                        child: Text(
-                                          'Cancelar',
-                                          style: TextStyle(
-                                            color: Colors.blue,
-                                          ),
-                                        ),
-                                        onPressed: () {
-                                          Navigator.of(context).pop();
-                                        },
-                                      ),
-                                      TextButton(
-                                        child: Text(
-                                          'Eliminar',
-                                          style: TextStyle(
-                                            color: Colors.blue,
-                                          ),
-                                        ),
-                                        onPressed: () {
-                                          deleteUser(user.idUser);
-                                          Navigator.of(context).pop();
-                                        },
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ],
+                return ListTile(
+                  title: Text(user.username),
+                  subtitle: Text(user.email),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.edit),
+                        onPressed: () {
+                          showEditDialog(user);
+                        },
                       ),
-                    ),
-                    Divider(
-                      thickness: 1,
-                      color: Colors.grey,
-                    ),
-                  ],
+                      IconButton(
+                        icon: Icon(Icons.delete),
+                        onPressed: () {
+                          showDeleteConfirmationDialog(user);
+                        },
+                      ),
+                    ],
+                  ),
                 );
               },
-            ),
-          ),
-        ],
+            );
+          } else if (state is UserError) {
+            return Center(child: Text('Error: ${state.e.toString()}'));
+          } else {
+            return Container();
+          }
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Abre el diálogo para crear un nuevo usuario
           showDialog(
             context: context,
             builder: (context) {
               return AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10.0),
+                ),
                 title: Text('Crear Usuario'),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -267,12 +292,33 @@ class _UserListScreenState extends State<UserScreen> {
                       controller: usernameController,
                       decoration: InputDecoration(labelText: 'Nombre de usuario'),
                     ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: lastnameController,
+                            decoration: InputDecoration(labelText: 'Apellido'),
+                          ),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: rolController,
+                            decoration: InputDecoration(labelText: 'Rol'),
+                          ),
+                        ),
+                      ],
+                    ),
                     TextField(
                       controller: emailController,
                       decoration: InputDecoration(labelText: 'Correo electrónico'),
                     ),
+                    TextField(
+                      controller: passwordController,
+                      decoration: InputDecoration(labelText: 'Contraseña'),
+                    ),
                   ],
                 ),
+                actionsPadding: EdgeInsets.only(bottom: 8.0),
                 actions: [
                   TextButton(
                     child: Text(
@@ -282,8 +328,7 @@ class _UserListScreenState extends State<UserScreen> {
                       ),
                     ),
                     onPressed: () {
-                      usernameController.clear();
-                      emailController.clear();
+                      clearTextFields();
                       Navigator.of(context).pop();
                     },
                   ),
@@ -296,9 +341,7 @@ class _UserListScreenState extends State<UserScreen> {
                     ),
                     onPressed: () {
                       createUser();
-                      usernameController.clear();
-                      emailController.clear();
-                      loadUserList();
+                      clearTextFields();
                       Navigator.of(context).pop();
                     },
                   ),
